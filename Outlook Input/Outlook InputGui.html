@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>XMSG("Outlook Input")</title>
+    <script type="text/javascript">
+     // Include the base GUI library.
+     document.write('<link rel="import" href="' + window.Alteryx.LibDir + '2/lib/includes.html">');
+    </script>
+    <script type="text/javascript" src="ews-javascript-api/ExchangeWebService.js"></script>
+    <style type="text/css">
+      body {
+        margin: 15px;
+      }
+      #widgetList {
+        padding-bottom: 20px;
+      }
+      .header-ruler {
+        background-color: #cccccc;
+        height: 1px;
+        border: 0 none;
+        flex-grow: 1;
+        margin-top: 0.625em;
+        margin-left: 10px;
+      }
+      .header-message {
+        color: #52617f;
+        font-size: 1.78em;
+        font-weight: normal;
+        padding-bottom: 0px;
+        margin: 0px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+      }
+      h2 {
+        padding: 10px 0 5px 0;
+        margin: 15px 5px 5px 0;
+        font-size: 1.556em;
+        font-weight: normal;
+        color: #52617f;
+      }
+      h3 {
+        color: #8698ba;
+        font-size: 1.167em;
+        margin: 6px 0px 3px 0;
+        padding: 0;
+        font-weight: normal;
+        line-height: 1.42857143;
+      }
+      h3.container:first-child {
+          border-top: 0;
+      }
+      .flex-row {
+        margin: 0;
+        padding: 0;
+      }
+      .flex-row li {
+        list-style: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header-message">
+      <div>XMSG("Outlook Input")</div>
+      <hr class="header-ruler"></hr>
+    </div>
+	  <article id="widgetList">
+      <section>
+        <h3>XMSG("User Name:")</h3>
+        <ayx data-ui-props='{type:"TextBox", widgetId:"UserName"}'></ayx>
+        <h3>XMSG("Password:")</h3>
+        <ayx data-ui-props='{type:"TextBox", widgetId:"Password"}'></ayx>
+        <h3>XMSG("Exchange Server Version:")</h3>
+        <ayx data-ui-props='{type:"DropDown", widgetId:"ExchangeServerVersion"}'></ayx>
+        <!--<h3>XMSG("Use Manual Service URL")</h3>-->
+        <ayx data-ui-props='{type:"CheckBox", widgetId:"UseManualServiceURL", label:"XMSG("Use Manual Service URL")"}'></ayx>
+        <h3>XMSG("Service URL:")</h3>
+        <ayx data-ui-props='{type:"TextBox", widgetId:"ServiceURL"}'></ayx>
+        <!--<h3>XMSG("Use Different Mailbox")</h3>-->
+        <ayx data-ui-props='{type:"CheckBox", widgetId:"UseDifferentMailbox", label:"XMSG("Use Different Mailbox")"}'></ayx>
+        <h3>XMSG("Mailbox:")</h3>
+        <ayx data-ui-props='{type:"TextBox", widgetId:"Mailbox"}'></ayx>
+      </section>
+
+      <section>
+        <h3>XMSG("Folder to Search:")</h3>
+        <ayx data-ui-props='{type:"DropDown", widgetId:"FolderToSearch"}'></ayx>
+        <!--<h3>XMSG("Include Sub-Folders")</h3>-->
+        <ayx data-ui-props='{type:"CheckBox", widgetId:"IncludeSubFolders", label:"XMSG("Include Sub-Folders")"}'></ayx>
+        <h3>XMSG("Sub-Folder Name:")</h3>
+        <ayx data-ui-props='{type:"TextBox", widgetId:"SubFolderName"}'></ayx>
+        <!--<h3>XMSG("Skip Root Folder Search")</h3>-->
+        <ayx data-ui-props='{type:"CheckBox", widgetId:"SkipRootFolderSearch", label:"XMSG("Skip Root Folder Search")"}'></ayx>
+        <!--<h3>XMSG("Include Folder Name in Output")</h3>-->
+        <ayx data-ui-props='{type:"CheckBox", widgetId:"IncludeFolderNameInOutput", label:"XMSG("Include Folder Name in Output")"}'></ayx>
+      </section>
+
+      <section>
+        <h3>XMSG("For Recurring Calendar Items Only:")</h3>
+        <!--<h3>XMSG("Include Recurring Events")</h3>-->
+        <ayx data-ui-props='{type:"CheckBox", widgetId:"IncludeRecurringEvents", label:"XMSG("Include Recurring Events")"}'></ayx>
+        <h3>XMSG("Start Date:")</h3>
+        <ayx data-ui-props='{type:"DateTimeField", widgetId:"StartDate"}' ></ayx>
+        <h3>XMSG("End Date:")</h3>
+        <ayx data-ui-props='{type:"DateTimeField", widgetId:"EndDate"}' ></ayx>
+        <h3>XMSG("Select Fields:")</h3>
+        <ayx data-ui-props='{type:"ListBox", widgetId:"Fields", heightAuto: true}'></ayx>
+        <h3>XMSG("Attachment Text Contains:")</h3>
+        <ayx data-ui-props='{type:"TextBox", widgetId:"AttachmentFilter"}'></ayx>
+        <h3>XMSG("Query String:")</h3>
+        <ayx data-ui-props='{type:"TextBox", widgetId:"QueryString"}'></ayx>
+      </section>
+    </article>
+
+    <script type="text/javascript">
+
+      getExchangeVersions = function() {
+        var versions = [];
+        Object.keys(EwsJS.ExchangeVersion).map(function(version) {
+            if (!isNaN(version)) {
+              versions.push({ label: EwsJS.ExchangeVersion[version], value: version });
+            }
+        });
+        return versions;
+      }
+      
+      // Get folders for UI drop-downs.
+      getWellKnownFolderName = function(index) {
+        var folders = Object.keys(EwsJS.WellKnownFolderName).map(function(folder) {
+            return EwsJS.WellKnownFolderName[folder];
+        });
+        return folders[index];
+      }
+
+      getFolders = function() {
+        var folders = [];
+        Object.keys(EwsJS.WellKnownFolderName).map(function(folder) {
+            if (!isNaN(folder)) {
+              folders.push({ label: EwsJS.WellKnownFolderName[folder], value: folder });
+            }
+        });
+        return folders;
+      }
+
+      getField = function(name) {
+        if (name != undefined &&
+            name != "" &&
+            name != "CalendarItemType" &&
+            name != "ConferenceType" &&
+            name != "ExtendedProperties" &&
+            name != "MeetingTimeZone" &&
+            name != "ResponseObjects") {
+              return name.replace('ReminderIsSet', 'IsReminderSet');
+            }
+        return null;
+      }
+
+      getFields = function(folder) {
+        var fields = [];
+        switch(folder) {
+          case "Calendar":
+            for (var key in EwsJS.AppointmentSchema) {
+              var field = getField(EwsJS.AppointmentSchema[key].name);
+              if (field != null) {
+                  fields.push({ label: field.toString(), value: field.toString() });
+              }
+            }
+            break;
+            case "Contacts":
+              for (var key in EwsJS.ContactSchema) {
+                var field = getField(EwsJS.ContactSchema[key].name);
+                if (field != null) {
+                    fields.push({ label: field.toString(), value: field.toString() });
+                }
+              }
+              break;
+          case "Inbox":
+            for (var key in EwsJS.EmailMessageSchema) {
+              var field = getField(EwsJS.EmailMessageSchema[key].name);
+              if (field != null) {
+                  fields.push({ label: field.toString(), value: field.toString() });
+              }
+            }
+            break;
+          default:
+            for (var key in EwsJS.ItemSchema) {
+              var field = getField(EwsJS.ItemSchema[key].name);
+              if (field != null) {
+                  fields.push({ label: field.toString(), value: field.toString() });
+              }
+            }
+            break;
+        }
+        return fields;
+      }
+
+      Alteryx.Gui.BeforeLoad = function (manager, AlteryxDataItems, json) {
+        
+        var textUserName = new AlteryxDataItems.SimpleString('UserName')
+        manager.addDataItem(textUserName)
+        manager.bindDataItemToWidget(textUserName, 'UserName')
+
+        var textPassword = new AlteryxDataItems.SimpleString('Password', {password: true})
+        manager.addDataItem(textPassword)
+        manager.bindDataItemToWidget(textPassword, 'Password')
+
+        var stringSelectorExchangeServerVersion = new AlteryxDataItems.StringSelector('ExchangeServerVersion', {
+          optionList: getExchangeVersions()
+        })
+        manager.addDataItem(stringSelectorExchangeServerVersion)
+        manager.bindDataItemToWidget(stringSelectorExchangeServerVersion, 'ExchangeServerVersion')
+
+        var booleanUseManualServiceUrl = new AlteryxDataItems.SimpleBool('UseManualServiceURL')
+        manager.addDataItem(booleanUseManualServiceUrl)
+        manager.bindDataItemToWidget(booleanUseManualServiceUrl, 'UseManualServiceURL')
+
+        var textServiceUrl = new AlteryxDataItems.SimpleString('ServiceURL')
+        manager.addDataItem(textServiceUrl)
+        manager.bindDataItemToWidget(textServiceUrl, 'ServiceURL')
+        
+        var booleanUseDifferentMailbox = new AlteryxDataItems.SimpleBool('UseDifferentMailbox')
+        manager.addDataItem(booleanUseDifferentMailbox)
+        manager.bindDataItemToWidget(booleanUseDifferentMailbox, 'UseDifferentMailbox')
+
+        var textMailbox = new AlteryxDataItems.SimpleString('Mailbox')
+        manager.addDataItem(textMailbox)
+        manager.bindDataItemToWidget(textMailbox, 'Mailbox')
+
+        var stringSelectorFolderToSearch = new AlteryxDataItems.StringSelector('FolderToSearch', {
+          optionList: getFolders()
+        })
+        manager.addDataItem(stringSelectorFolderToSearch)
+        manager.bindDataItemToWidget(stringSelectorFolderToSearch, 'FolderToSearch')
+        
+        var booleanIncludeSubFolders = new AlteryxDataItems.SimpleBool('IncludeSubFolders')
+        manager.addDataItem(booleanIncludeSubFolders)
+        manager.bindDataItemToWidget(booleanIncludeSubFolders, 'IncludeSubFolders')
+
+        var textSubFolderName = new AlteryxDataItems.SimpleString('SubFolderName')
+        manager.addDataItem(textSubFolderName)
+        manager.bindDataItemToWidget(textSubFolderName, 'SubFolderName')
+        
+        var booleanSkipRootFolderSearch = new AlteryxDataItems.SimpleBool('SkipRootFolderSearch')
+        manager.addDataItem(booleanSkipRootFolderSearch)
+        manager.bindDataItemToWidget(booleanSkipRootFolderSearch, 'SkipRootFolderSearch')
+        
+        var booleanIncludeFolderNameInOutput = new AlteryxDataItems.SimpleBool('IncludeFolderNameInOutput')
+        manager.addDataItem(booleanIncludeFolderNameInOutput)
+        manager.bindDataItemToWidget(booleanIncludeFolderNameInOutput, 'IncludeFolderNameInOutput')
+        
+        var booleanIncludeRecurringEvents = new AlteryxDataItems.SimpleBool('IncludeRecurringEvents')
+        manager.addDataItem(booleanIncludeRecurringEvents)
+        manager.bindDataItemToWidget(booleanIncludeRecurringEvents, 'IncludeRecurringEvents')
+
+        var dateTimeStartDate = new AlteryxDataItems.SimpleDateTime('StartDate', {
+          dateFormat:"YYYY-MM-DD",
+          timeFormat:"HH:mm:ss"
+        })
+        manager.addDataItem(dateTimeStartDate)
+        manager.bindDataItemToWidget(dateTimeStartDate, 'StartDate')
+
+        var dateTimeEndDate = new AlteryxDataItems.SimpleDateTime('EndDate', {
+          dateFormat:"YYYY-MM-DD",
+          timeFormat:"HH:mm:ss"
+        })
+        manager.addDataItem(dateTimeEndDate)
+        manager.bindDataItemToWidget(dateTimeEndDate, 'EndDate') 
+
+        var stringSelectorFields = new AlteryxDataItems.StringSelectorMulti('Fields', {
+          optionList: json.Configuration == undefined || json.Configuration == null ? [] : getFields(getWellKnownFolderName(json.Configuration.FolderToSearch))
+        })
+        manager.addDataItem(stringSelectorFields)
+        manager.bindDataItemToWidget(stringSelectorFields, 'Fields')
+
+        var textAttachmentFilter = new AlteryxDataItems.SimpleString('AttachmentFilter')
+        manager.addDataItem(textAttachmentFilter)
+        manager.bindDataItemToWidget(textAttachmentFilter, 'AttachmentFilter')
+
+        var textQueryString = new AlteryxDataItems.SimpleString('QueryString')
+        manager.addDataItem(textQueryString)
+        manager.bindDataItemToWidget(textQueryString, 'QueryString')
+      }
+
+      Alteryx.Gui.AfterLoad = function (manager) {
+        var fieldsDataItem = manager.getDataItem('Fields');
+
+        manager.getDataItem('FolderToSearch').registerPropertyListener('value', 
+          function (e) { 
+            manager.getDataItem('Fields').setValue([]);
+            fieldsDataItem.setOptionList(getFields(getWellKnownFolderName(e.value)));
+          }
+        );
+      }
+    </script>
+  </body>
+</html>

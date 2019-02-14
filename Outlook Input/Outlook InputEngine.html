@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+
+    <script>
+        // Include version 1 of the engine base library.
+        document.write('<link rel="import" href="' + window.Alteryx.LibDir + '1/lib/alteryx/engine/includes.html">');
+    </script>
+
+    <script type="text/javascript" src="ews-javascript-api/ExchangeWebService.js"></script>
+
+    <script>
+        /**
+        * You may wish to namespace your own data for live-processing somewhere like this:
+        */
+        window.ExampleTool = {
+        }
+
+        var c;
+        var root;
+        var service;
+
+        /**
+        * This function defines our input and output connections.
+        * It must match the input and output connections defined in the GUI plugin's XML file.
+        */
+        Alteryx.Plugin.DefineConnections = function()
+        {
+            return {
+                IncomingConnections: [],
+                OutgoingConnections: [{
+                    name: "Message"
+                },{
+                    name: "Attachment"
+                }]
+            };
+        };
+
+        /**
+        * Called at the beginning of plugin lifetime with the plugin's configuration properties.
+        * This implementation contains example code that prints each configuration key/value pair as
+        * an engine output message.
+        *
+        * @params config The plugin's configuration.
+        */
+        Alteryx.Plugin.PI_Init = function(config)
+        {
+            c = config.Configuration;
+
+            var fieldValues = [];
+
+            for (var field of config.Configuration.Fields.split(",")) {
+                switch (getWellKnownFolderName(config.Configuration.FolderToSearch)) {
+                case "Calendar":
+                    fieldValues.push(EwsJS.AppointmentSchema[field]);
+                    break;
+                case "Contacts":
+                    fieldValues.push(EwsJS.ContactSchema[field.replace('Nickname', 'NickName')]);
+                    break;
+                case "Inbox":
+                    fieldValues.push(EwsJS.EmailMessageSchema[field]);
+                    break;
+                default:
+                    fieldValues.push(EwsJS.ItemSchema[field]);
+                    break;
+                }
+            }
+
+            c.Fields = fieldValues;
+        };
+
+        /**
+        * Called once for each incoming connection with the connection's metainfo. When a per-connection init comes in,
+        * we would probably store off the incoming RecordInfo.
+        *
+        * @params metaInfo The meta-information for the current incoming connection.
+        */
+        Alteryx.Plugin.II_Init = function(metaInfo)
+        {
+            // Input tool, so no inbound connection.
+        };
+
+        /**
+        * After II_Init has been called for each incoming connection, II_PushRecords is called for each non-empty
+        * incoming connection with that connection's records. This implementation contains example code that
+        * pushes out the same records it receives.
+        *
+        * @param data The incoming records.
+        */
+        Alteryx.Plugin.II_PushRecords = function(data)
+        {
+            // Input tool, so no inbound records.
+        };
+
+        /**
+        * II_AllClosed is called with no arguments after all incoming connections have closed. This implementation
+        * sends a CloseOutput message with the name of the outgoing connection to close.
+        *
+        * All code paths must terminate with a call to Alteryx.Engine.SendMessage.Complete()
+        */
+        Alteryx.Plugin.II_AllClosed = function()
+        {
+            Alteryx.Engine.SendMessage.RecordInfo(Alteryx.Plugin.DefineConnections().OutgoingConnections[0].name, ExampleTool.outputInfo)
+            Alteryx.Engine.SendMessage.PushRecords(Alteryx.Plugin.DefineConnections().OutgoingConnections[0].name, ExampleTool.myRecords);
+            Alteryx.Engine.SendMessage.CloseOutput(Alteryx.Plugin.DefineConnections().OutgoingConnections[0].name);
+            Alteryx.Engine.SendMessage.Complete();
+        };
+
+        /**
+        * If the tool has no input:
+        *    PI_PushAllRecords is called instead of the II functions.
+        *    It is also called at configure time with a record limit of 0.
+        *
+        * If this function is implemented, all code paths must signal completion with a call to
+        *    Alteryx.Engine.SendMessage.Complete()
+        *
+        * @param recordLimit The maximum number of records that this function should return.
+        */
+        Alteryx.Plugin.PI_PushAllRecords = function(recordLimit)
+        {
+            try {
+                var messageOutputRecordInfo = [];
+                var attachmentOutputRecordInfo = [];
+
+                if (c.IncludeFolderNameInOutput == "True") {
+                    messageOutputRecordInfo.push({
+                    name: "Folder",
+                    type: "V_WString",
+                    size: 1073741823
+                    });
+                }
+        
+                for (var field of c.Fields) {
+                    if (field.name == "Attachments") {
+                    attachmentOutputRecordInfo.push({
+                        name: "Name",
+                        type: "V_WString",
+                        size: 1073741823
+                    }, {
+                        name: "Base64Content",
+                        type: "Blob",
+                        size: 1073741823
+                    }, {
+                        name: "Content",
+                        type: "V_WString",
+                        size: 1073741823
+                    });
+                    } else {
+                        messageOutputRecordInfo.push({
+                            name: field.name,
+                            type: field.name == "MimeContent" ? "Blob" : "V_WString",
+                            size: 1073741823
+                        });
+                    }
+                }
+
+                Alteryx.Engine.SendMessage.RecordInfo("Message", { "Field": messageOutputRecordInfo });
+
+                if (attachmentOutputRecordInfo.length > 0) {
+                    Alteryx.Engine.SendMessage.RecordInfo("Attachment", { "Field": attachmentOutputRecordInfo });
+                }
+
+                EwsJS.EwsLogging.DebugLogEnabled = false;
+                service = new EwsJS.ExchangeService(EwsJS.ExchangeVersion.Exchange2016);
+                var mailbox = new EwsJS.Mailbox(c.UseDifferentMailbox == "True" ? c.Mailbox : c.UserName);
+                var folderView = new EwsJS.FolderView(1000);
+                folderView.PropertySet = new EwsJS.PropertySet(EwsJS.BasePropertySet.IdOnly);
+                folderView.Traversal = EwsJS.FolderTraversal.Deep;
+                var calendarView = new EwsJS.CalendarView(c.StartDate, c.EndDate);
+                service.Credentials = new EwsJS.ExchangeCredentials(c.UserName, c.Password);
+                root = new EwsJS.FolderId(c.FolderToSearch, mailbox);
+            
+                if (c.UseManualServiceURL == "True") {
+                    service.Url = new EwsJS.Uri(c.ServiceURL);
+                } else {
+                    //Alteryx.Engine.SendMessage.Info("Before service url set:");
+                    // Switch to autodiscover.
+                    //return service.AutodiscoverUrl(mailbox.Address, (url) => true);
+                    //service.Url = new EwsJS.Uri("https://outlook.office365.com/Ews/Exchange.asmx"); // you can also use exch.AutodiscoverUrl
+                    /*GetRedirectURLs(mailbox).then(function (response) {
+                        console.log("GetRedirectURLs Promise Response");
+                        console.log(JSON.stringify(response));
+                    });*/
+                    service.AutodiscoverUrl(mailbox.Address, (url) => true);
+                    //console.log(JSON.stringify(GetRedirectURLs(mailbox)));
+                }
+            
+                FindFolders(folderView)
+                .then(function (folders) {               
+                    return findItems(folders).then(x => x);
+                })
+                .then(function (folders) {
+                    if (c.FolderToSearch == "0" && c.IncludeRecurringEvents == "True") {
+                        return findAppointments(folders).then(x => x);
+                    } else {
+                        Alteryx.Engine.SendMessage.Complete();
+                    }
+                })
+                .then(function (appointmentResults) {
+                    Alteryx.Engine.SendMessage.Complete();
+                })
+                .catch(function (error) {
+                    Alteryx.Engine.SendMessage.Error("FindFolders Parent Error");
+                    Alteryx.Engine.SendMessage.Error(error.message);
+                    Alteryx.Engine.SendMessage.Error(error.stack);
+                    Alteryx.Engine.SendMessage.Complete();
+                });
+            }
+            catch (error) {
+                Alteryx.Engine.SendMessage.Error(error.message);
+                Alteryx.Engine.SendMessage.Error(error.stack);
+                Alteryx.Engine.SendMessage.Complete();
+            }
+        };
+
+        /**
+        * PI_Close is called with no arguments at the end of the plugin's lifetime.
+        * All code paths must terminate with a call to Alteryx.Engine.SendMessage.PI_Close()
+        */
+        Alteryx.Plugin.PI_Close = function()
+        {
+            Alteryx.Engine.SendMessage.PI_Close();
+        };
+
+        function GetRedirectURLs(mailbox) {
+            return service.AutodiscoverUrl(mailbox.Address, (url) => true);
+        }
+        
+        function RedirectCallback(url) {
+            return true;//url.toLowerCase().startsWith('https://');
+        }
+
+        const bindFolders = async r =>
+        {
+            var folders = [];
+
+            for (let i = 0; i < r.Folders.length; i++) {
+                if (c.IncludeFolderNameInOutput == "True") {
+                    const x = await EwsJS.Folder.Bind(service, r.Folders[i].folderName != undefined ? r.Folders[i] : r.Folders[i].propertyBag.properties.objects.Id, new EwsJS.PropertySet(EwsJS.BasePropertySet.IdOnly, [EwsJS.FolderSchema.DisplayName]))
+                    .then(function (boundFolder) {
+                        folders.push(boundFolder);
+                    })
+                    .catch(function (error) {
+                        Alteryx.Engine.SendMessage.Error("bindFolders Error");
+                        Alteryx.Engine.SendMessage.Error(error);
+                        Alteryx.Engine.SendMessage.Complete();
+                    });
+                } else {
+                    folders.push(r.Folders[i]);
+                }
+            }
+            
+            return folders;
+        }
+
+        const findItems = async folders =>
+        {
+            for (let i = 0; i < folders.length; i++) {
+                const x = await FindItems(folders[i], c.QueryString, new EwsJS.ItemView(1000), [])
+                .then(function (findItemsResult) {
+                    if (findItemsResult != undefined && findItemsResult.length > 0) {
+                        return GetItemsFromFolder(service, folders[i], findItemsResult)
+                        .then(function (response) {
+                            Alteryx.Engine.SendMessage.PushRecords("Message", response.records);
+                
+                            if (response.attachmentIDs != undefined && response.attachmentIDs.length > 0) {
+                                return service.GetAttachments(response.attachmentIDs, null, [EwsJS.ItemSchema.MimeContent])
+                                .then(function (attachmentResponse) {
+                                    return attachmentResponse;
+                                })
+                                .catch(function (error) {
+                                    Alteryx.Engine.SendMessage.Error("Attachment Error");
+                                    Alteryx.Engine.SendMessage.Error(error.message);
+                                    Alteryx.Engine.SendMessage.Complete();
+                                });
+                            }
+
+                            return;
+                        })
+                        .then(function (attachmentResponse) {
+                            if (attachmentResponse != undefined) {
+                                var attachmentRecords = [];
+                                if (attachmentResponse.responses != undefined && attachmentResponse.responses.length > 0) {
+                                    attachmentResponse.responses.forEach(function (attachment) {
+                                        if (attachment.attachment.Item != undefined) {
+                                            attachmentRecords.push([
+                                                attachment.attachment.name,
+                                                attachment.attachment.Base64Content,
+                                                attachment.attachment.Item.MimeContent.Content
+                                            ]);
+                                        } else {
+                                            attachmentRecords.push([
+                                                attachment.attachment.name,
+                                                attachment.attachment.Base64Content,
+                                                null
+                                            ]);
+                                        }
+                                    });
+                                    
+                                    Alteryx.Engine.SendMessage.PushRecords("Attachment", attachmentRecords);
+                                }
+                            }
+
+                            return;
+                        })
+                        .catch(function (error) {
+                            Alteryx.Engine.SendMessage.Erro("findItems => GetItemsFromFolder Error.");
+                            Alteryx.Engine.SendMessage.Error(error.message);
+                            Alteryx.Engine.SendMessage.Complete();
+                        });
+                    }
+                })
+                .catch(function (error) {
+                    Alteryx.Engine.SendMessage.Erro("findItems Error.");
+                    Alteryx.Engine.SendMessage.Error(error.message);
+                    Alteryx.Engine.SendMessage.Complete();
+                });
+            }
+
+            return folders;
+        }
+
+        const findAppointments = async folders =>
+        { 
+            for (let i = 0; i < folders.length; i++) {
+                const x = await FindAppointments(folders[i], new EwsJS.CalendarView(getFormattedDate(c.StartDate), getFormattedDate(c.EndDate)), [])
+                .then(function (findItemsResult) {
+                    if (findItemsResult != undefined && findItemsResult.length > 0) {
+                        return GetItemsFromFolder(service, folders[i], findItemsResult)
+                        .then(function (response) {
+                            Alteryx.Engine.SendMessage.PushRecords("Message", response.records);
+                
+                            if (response.attachmentIDs != undefined && response.attachmentIDs.length > 0) {
+                                return service.GetAttachments(response.attachmentIDs, null, null)
+                                .then(function (attachmentResponse) {
+                                    return attachmentResponse;
+                                })
+                                .catch(function (error) {
+                                    Alteryx.Engine.SendMessage.Error("findAppointments => GetItemsFromFolder => GetAttachments Error");
+                                    Alteryx.Engine.SendMessage.Error(error.message);
+                                    Alteryx.Engine.SendMessage.Complete();
+                                });
+                            }
+
+                            return;
+                        })
+                        .then(function (attachmentResponse) {
+                            if (attachmentResponse != undefined) {
+                                var attachmentRecords = [];
+                                if (attachmentResponse.responses != undefined && attachmentResponse.responses.length > 0) {
+                                    attachmentResponse.responses.forEach(function (attachment) {
+                                        if (attachment.attachment.Item != undefined) {
+                                            attachmentRecords.push([
+                                                attachment.attachment.name,
+                                                attachment.attachment.Base64Content,
+                                                attachment.attachment.Item.MimeContent.Content
+                                            ]);
+                                        } else {
+                                            attachmentRecords.push([
+                                                attachment.attachment.name,
+                                                attachment.attachment.Base64Content,
+                                                null
+                                            ]);
+                                        }
+                                    });
+                                    
+                                    Alteryx.Engine.SendMessage.PushRecords("Attachment", attachmentRecords);
+                                }
+                            }
+
+                            return;
+                        })
+                        .catch(function (error) {
+                            Alteryx.Engine.SendMessage.Error("findAppointments => GetItemsFromFolder Error");
+                            Alteryx.Engine.SendMessage.Error(error.message);
+                            Alteryx.Engine.SendMessage.Complete();
+                        });
+                    }
+                })
+                .catch(function (error) {
+                    Alteryx.Engine.SendMessage.Error("findAppointments Error");
+                    Alteryx.Engine.SendMessage.Error(error.message);
+                    Alteryx.Engine.SendMessage.Complete();
+                });
+            }
+
+            return "Appointments Returned";
+        }
+
+        function FindFolders(folderView) {
+            if (c.IncludeSubFolders == "True") {
+                if (c.SubFolderName != "" && c.SubFolderName != null) {
+                    return service.FindFolders(Number(c.FolderToSearch), new EwsJS.SearchFilter.ContainsSubstring(EwsJS.FolderSchema.DisplayName, c.SubFolderName), folderView)
+                    .then(function (folderResults) {
+                        if (c.SkipRootFolderSearch != "True") {
+                            folderResults.Folders.push(root);
+                        }
+                        return bindFolders(folderResults).then(x => x);
+                    })
+                    .catch(function (error) {
+                        Alteryx.Engine.SendMessage.Error("service.FindFolders (sub-folder) Error.");
+                        Alteryx.Engine.SendMessage.Error(error);
+                        Alteryx.Engine.SendMessage.Complete();
+                    });
+                } else {
+                    return service.FindFolders(Number(c.FolderToSearch), folderView)
+                    .then(function (folderResults) {
+                        if (c.SkipRootFolderSearch != "True") {
+                            folderResults.Folders.push(root);
+                        }
+                        return bindFolders(folderResults).then(x => x);
+                    })
+                    .then(function (loopResponse) {
+                        return loopResponse;
+                    })
+                    .catch(function (error) {
+                        Alteryx.Engine.SendMessage.Error("service.FindFolders (parent folder) Error.");
+                        Alteryx.Engine.SendMessage.Error(error.message);
+                        Alteryx.Engine.SendMessage.Complete();
+                    });
+                }
+            } else {
+                var folderResults = {
+                    Folders: [
+                        root
+                    ]
+                };
+
+                return bindFolders(folderResults).then(x => x);
+            }
+        }
+
+        function FindItems(folder, queryString, itemView, itemIDs) {
+            //console.log(JSON.stringify(folder));
+            //console.log(JSON.stringify(itemView));
+            //console.log(JSON.stringify(itemIDs));
+            return service.FindItems(folder.Id == undefined || folder.Id == null || folder.Id == "" ? folder : folder.Id, queryString == undefined || queryString == "" ? null : queryString, itemView)
+            .then(function (result) {
+                for (var item of result.Items) {
+                    itemIDs.push(item.Id);
+                }
+
+                if (result.MoreAvailable === true) {
+                    itemView.Offset += Array.from(result.Items).length;
+
+                    return FindItems(folder, queryString, itemView, itemIDs);
+                }
+
+                return itemIDs;
+            })
+            .catch(function (error) {
+                Alteryx.Engine.SendMessage.Error("FindItems Error.");
+                Alteryx.Engine.SendMessage.Error(error);
+                Alteryx.Engine.SendMessage.Complete();
+            });
+        }
+        
+        function FindAppointments(folder, calendarView, itemIDs) {
+            return service.FindAppointments(folder.Id == undefined || folder.Id == null || folder.Id == "" ? folder : folder.Id, calendarView)
+            .then(function (result) {
+                for (var item of result.Items) {
+                    itemIDs.push(item.Id);
+                }
+    
+                if (result.MoreAvailable === true) {
+                    itemView.Offset += Array.from(result.Items).length;
+    
+                    return FindAppointments(folder, calendarView, itemIDs);
+                }
+    
+                return itemIDs;
+            })
+            .catch(function (error) {
+                Alteryx.Engine.SendMessage.Error("FindAppointments Error.");
+                Alteryx.Engine.SendMessage.Error(error.message);
+                Alteryx.Engine.SendMessage.Complete();
+            });
+        }
+
+        function GetItemsFromFolder(service, folder, itemIDs) {
+            return service.BindToItems(itemIDs, new EwsJS.PropertySet(EwsJS.BasePropertySet.IdOnly, c.Fields))
+            .then(function (responseItems) {
+                var records = [];
+                var attachmentIDs = [];
+
+                responseItems.responses.forEach(function (responseItem) {
+                    var record = [];
+                    if (c.IncludeFolderNameInOutput == "True") {
+                        record.push(folder.DisplayName == undefined ? getWellKnownFolderName(folder.folderName) : folder.DisplayName);
+                    }
+
+                    for (var field of c.Fields) {
+                        if (responseItem.item != undefined) {
+                            if (responseItem.item.propertyBag.properties.objects[field.name] != undefined) {
+                                if (field.name === 'Id') {
+                                    record.push(responseItem.item.propertyBag.properties.objects[field.name].UniqueId);
+                                } else if (field.name === "Body" || field.name === "TextBody") {
+                                    record.push(responseItem.item.propertyBag.properties.objects[field.name].Text);
+                                } else if (field.name.includes("Recipient") || field.name == "InternetMessageHeaders") {
+                                    record.push(responseItem.item.propertyBag.properties.objects[field.name].Items.toString());
+                                } else if (field.name === "ParentFolderId") {
+                                    record.push(responseItem.item.propertyBag.properties.objects[field.name].folderName);
+                                } else {
+                                    if (field.name != 'Attachments') {
+                                        if (responseItem.item.propertyBag.properties.objects[field.name].toString() == "[object Object]") {
+                                            record.push(JSON.stringify(responseItem.item.propertyBag.properties.objects[field.name]));
+                                        } else {
+                                            record.push(responseItem.item.propertyBag.properties.objects[field.name].toString());
+                                        }
+                                    }
+                                }
+
+                                if (field.name === 'Attachments' && responseItem.item.propertyBag.properties.objects["HasAttachments"]) {
+                                    for (var attachment of responseItem.item.Attachments.items) {
+                                        if ((c.AttachmentFilter == null || c.AttachmentFilter == "") || (c.AttachmentFilter != null && attachment.Name.indexOf(c.AttachmentFilter) !== -1)) {
+                                            attachmentIDs.push(attachment.Id);
+                                        }
+                                    }
+                                }
+                            } else {
+                                if (field.name != "Attachments") {
+                                    record.push(null);
+                                }
+                            }
+                        } else {
+                            if (field.name != "Attachments") {
+                                record.push(null);
+                            }
+                        }
+                    }
+
+                    records.push(record);
+                });
+
+                return {
+                    records: records,
+                    attachmentIDs: attachmentIDs
+                };
+            })
+            .catch(function (error) {
+                Alteryx.Engine.SendMessage.Error("GetItemsFromFolder Error: ");
+                Alteryx.Engine.SendMessage.Error(error.message);
+                Alteryx.Enging.SendMessage.Error(error.stack);
+                Alteryx.Engine.SendMessage.Complete();
+            });
+        }
+
+        // Get folders for UI drop-downs.
+        function getWellKnownFolderName(index) {
+            var folders = Object.keys(EwsJS.WellKnownFolderName).map(function(folder) {
+                return EwsJS.WellKnownFolderName[folder];
+            });
+            
+            return folders[index];
+        }
+
+        // Get server versions for UI drop-downs.
+        function getExchangeVersion(index) {
+            var exchangeVersions = Object.keys(EwsJS.ExchangeVersion).map(function(version) {
+                return EwsJS.ExchangeVersion[version];
+            });
+            return exchangeVersions[index];
+        }
+
+        // Hack to account for moment.js not accepting the date formats sent back from Exchange, which include the time zone offset.
+        function getFormattedDate(dateString) {
+            var date = new Date(dateString);
+            var year = date.getFullYear();
+            var month = date.getMonth() + 1 > 9 ? date.getMonth() + 1 : '0' + (date.getMonth() + 1);
+            var day = date.getDate() > 9 ? date.getDate() : '0' + date.getDate();
+            var hours = date.getHours() > 9 ? date.getHours() : '0' + date.getHours();
+            var minutes = date.getMinutes() > 9 ? date.getMinutes() : '0' + date.getMinutes();
+            var seconds = date.getSeconds() > 9 ? date.getSeconds() : '0' + date.getSeconds();
+
+            return year + '-' + month + '-' + day + 'T' + hours + ':' + minutes + ':' + seconds + 'Z';
+        }
+
+    </script>
+</head>
+<body>
+</body>
+</html>

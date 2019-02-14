@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<Configuration>
+	<Properties>
+		<MetaInfo>
+			<Icon>Outlook Input\Outlook InputIcon.png</Icon>
+			<Name>Outlook Input</Name>
+			<CategoryName>Connectors</CategoryName>
+			<ToolVersion>2.0.0</ToolVersion>
+			<Author>Rick Paugh</Author>
+			<Description>Pull content from an Exchange server.</Description>
+		</MetaInfo>
+	</Properties>
+</Configuration>
