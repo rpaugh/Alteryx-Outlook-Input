@@ -305,14 +305,14 @@
                             return;
                         })
                         .catch(function (error) {
-                            Alteryx.Engine.SendMessage.Erro("findItems => GetItemsFromFolder Error.");
+                            Alteryx.Engine.SendMessage.Error("findItems => GetItemsFromFolder Error.");
                             Alteryx.Engine.SendMessage.Error(error.message);
                             Alteryx.Engine.SendMessage.Complete();
                         });
                     }
                 })
                 .catch(function (error) {
-                    Alteryx.Engine.SendMessage.Erro("findItems Error.");
+                    Alteryx.Engine.SendMessage.Error("findItems Error.");
                     Alteryx.Engine.SendMessage.Error(error.message);
                     Alteryx.Engine.SendMessage.Complete();
                 });
