@@ -184,6 +184,14 @@
               }
             }
             break;
+          case "SentItems":
+            for (var key in EwsJS.EmailMessageSchema) {
+              var field = getField(EwsJS.EmailMessageSchema[key].name);
+              if (field != null) {
+                  fields.push({ label: field.toString(), value: field.toString() });
+              }
+            }
+            break;
           default:
             for (var key in EwsJS.ItemSchema) {
               var field = getField(EwsJS.ItemSchema[key].name);

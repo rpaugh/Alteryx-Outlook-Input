@@ -61,6 +61,9 @@
                 case "Inbox":
                     fieldValues.push(EwsJS.EmailMessageSchema[field]);
                     break;
+                case "SentItems":
+                    fieldValues.push(EwsJS.EmailMessageSchema[field]);
+                    break;
                 default:
                     fieldValues.push(EwsJS.ItemSchema[field]);
                     break;
