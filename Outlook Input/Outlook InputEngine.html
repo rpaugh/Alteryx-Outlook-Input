@@ -391,7 +391,7 @@
         function FindFolders(folderView) {
             if (c.IncludeSubFolders == "True") {
                 if (c.SubFolderName != "" && c.SubFolderName != null) {
-                    return service.FindFolders(Number(c.FolderToSearch), new EwsJS.SearchFilter.ContainsSubstring(EwsJS.FolderSchema.DisplayName, c.SubFolderName), folderView)
+                    return service.FindFolders(/*Number(c.FolderToSearch)*/new EwsJS.FolderId(c.FolderToSearch, mailbox), new EwsJS.SearchFilter.ContainsSubstring(EwsJS.FolderSchema.DisplayName, c.SubFolderName), folderView)
                     .then(function (folderResults) {
                         if (c.SkipRootFolderSearch != "True") {
                             folderResults.Folders.push(root);
@@ -404,7 +404,7 @@
                         Alteryx.Engine.SendMessage.Complete();
                     });
                 } else {
-                    return service.FindFolders(Number(c.FolderToSearch), folderView)
+                    return service.FindFolders(/*Number(c.FolderToSearch)*/new EwsJS.FolderId(c.FolderToSearch, mailbox), folderView)
                     .then(function (folderResults) {
                         if (c.SkipRootFolderSearch != "True") {
                             folderResults.Folders.push(root);
